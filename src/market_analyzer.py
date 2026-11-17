@@ -1012,7 +1012,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 return method(
                     prompt,
                     max_tokens=8192,
-                    temperature=0.7,
+                    temperature=self.config.llm_temperature,
                 )
 
         if getattr_static(self.analyzer, "generate_text", missing) is missing:
@@ -1027,7 +1027,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         review = legacy_method(
             prompt,
             max_tokens=8192,
-            temperature=0.7,
+            temperature=self.config.llm_temperature,
         )
         if review is None:
             return None
