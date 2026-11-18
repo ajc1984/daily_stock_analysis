@@ -466,6 +466,12 @@ class BaseFetcher(ABC):
             n: 返回条数
         """
         return None
+    def get_longhubang(
+        self,
+        date: Optional[str] = None,
+    ) -> Optional[List[Dict[str, Any]]]:
+    """获取全市场龙虎榜（按日期查询）。"""
+    return None
 
     def get_daily_data(
         self,
@@ -5047,4 +5053,25 @@ class DataFetcherManager:
                 logger.warning(f"[{fetcher.name}] 获取涨停池失败: {error_reason}")
         if last_error:
             logger.warning(f"[涨停池] 所有数据源均失败，最终错误: {last_error}")
+        return []
+
+    def get_longhubang(
+        self,
+        date: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """获取全市场龙虎榜（自动切换数据源）。"""
+        last_error = ""
+        for fetcher in self._fetchers:
+            try:
+                data = fetcher.get_longhubang(date=date)
+                if data:
+                    logger.info(f"[{fetcher.name}] 获取龙虎榜成功")
+                    return data
+                last_error = f"{fetcher.name}返回空结果"
+            except Exception as e:
+                error_type, error_reason = summarize_exception(e)
+                last_error = f"{fetcher.name} ({error_type}) {error_reason}"
+                logger.warning(f"[{fetcher.name}] 获取龙虎榜失败: {error_reason}")
+        if last_error:
+            logger.warning(f"[龙虎榜] 所有数据源均失败，最终错误: {last_error}")
         return []
