@@ -501,7 +501,7 @@ jobs:
           MODE="${{ github.event.inputs.mode || 'full' }}"
 
           RUN_HOUR_UTC=$(date -u +%H)
-          if [ -n "${{ github.event.inputs.market_format }}" ] && [ "${{ github.event.inputs.market_format }}" ] != "auto" ]; then export MARKET_REVIEW_FORMAT="${{ github.event.inputs.market_format }}";  elif [ "$RUN_HOUR_UTC" = "01" ]; then export MARKET_REVIEW_FORMAT="auction"; else export MARKET_REVIEW_FORMAT="standard"; fi
+          if [ -n "${{ github.event.inputs.market_format }}" ] && [ "${{ github.event.inputs.market_format }}" != "auto" ]; then export MARKET_REVIEW_FORMAT="${{ github.event.inputs.market_format }}";  elif [ "$RUN_HOUR_UTC" = "01" ]; then export MARKET_REVIEW_FORMAT="auction"; else export MARKET_REVIEW_FORMAT="standard"; fi
           echo "=========================================="
           echo "🚀 A股自选股智能分析系统"
           echo "=========================================="
