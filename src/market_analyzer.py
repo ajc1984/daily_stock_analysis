@@ -14,7 +14,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from inspect import getattr_static
 from typing import Optional, Dict, Any, List
 
@@ -26,7 +26,7 @@ from src.report_language import normalize_report_language
 from src.search_service import SearchService
 from src.core.market_profile import get_profile, MarketProfile
 from src.core.market_strategy import get_market_strategy_blueprint
-from src.core.trading_calendar import get_market_now
+from src.core.trading_calendar import get_market_now, get_trading_dates
 from src.llm.backend_registry import (
     LOCAL_CLI_GENERATION_BACKEND_IDS,
     LITELLM_BACKEND_ID,
@@ -55,6 +55,10 @@ _CHINESE_SECTION_PATTERNS = {
     "sector_highlights": r"###\s*三、(?:板块主线|热点解读|板块表现)",
     "funds_sentiment": r"###\s*四、(?:资金与情绪|资金动向)",
     "news_catalysts": r"###\s*五、(?:消息催化|后市展望)",
+    "auction_indices": r"###\s*一、(?:指数开盘)",
+    "auction_heavyweights": r"###\s*二、(?:权重股)",
+    "auction_sentiment": r"###\s*三、(?:昨日情绪)",
+    "auction_shanghai": r"###\s*四、(?:上证近\s*5\s*日)",
 }
 
 
@@ -84,6 +88,7 @@ class MarketIndex:
             'open': self.open,
             'high': self.high,
             'low': self.low,
+            'prev_close': self.prev_close,
             'volume': self.volume,
             'amount': self.amount,
             'amplitude': self.amplitude,
@@ -108,6 +113,11 @@ class MarketOverview:
     bottom_sectors: List[Dict] = field(default_factory=list)  # 跌幅前5板块
     top_concepts: List[Dict] = field(default_factory=list)    # 涨幅前5概念
     bottom_concepts: List[Dict] = field(default_factory=list) # 跌幅前5概念
+    heavyweights: List[Dict] = field(default_factory=list)
+    yesterday_limit_up_count: int = 0
+    yesterday_lhb_count: int = 0
+    yesterday_leaders: List[Dict] = field(default_factory=list)
+    shanghai_last5: List[Dict] = field(default_factory=list)
 
 
 @dataclass
@@ -607,8 +617,125 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         
         # 4. 获取北向资金（可选）
         # self._get_north_flow(overview)
+        # 5. 集合竞价格式：补充权重股、昨日情绪与上证近 5 日（仅 A 股）
+        if self._is_auction_format() and self.region == "cn":
+            self._get_auction_heavyweights(overview)
+            self._get_auction_yesterday_sentiment(overview)
+            self._get_auction_shanghai_last5(overview)
         
         return overview
+
+
+    def _is_auction_format(self) -> bool:
+        """是否为集合竞价（auction）格式。"""
+        return getattr(self.config, "market_review_format", "standard") == "auction"
+
+
+    def _get_auction_heavyweights(self, overview: MarketOverview) -> None:
+        """集合竞价：取 9 只权重股的开盘价与昨收（fail-open，失败不中断）。"""
+        codes = ("000001", "600519", "300750", "002594", "300059", "601318", "601398", "600036", "000858")
+        rows: List[Dict] = []
+        try:
+            for code in codes:
+                try:
+                    quote = self.data_manager.get_realtime_quote(code)
+                    if quote is None:
+                        continue
+                    open_price = getattr(quote, "open_price", None)
+                    prev_close = getattr(quote, "pre_close", None)
+                    if prev_close is None or prev_close == 0:
+                        price = getattr(quote, "price", None)
+                        change_amount = getattr(quote, "change_amount", None)
+                        if price is not None and change_amount is not None:
+                            prev_close = price - change_amount
+                    rows.append({"code": code, "name": getattr(quote, "name", None) or code, "open": open_price, "prev_close": prev_close})
+                except Exception as exc:
+                    logger.warning("[大盘] %s action=get_auction_heavyweights code=%s status=error error=%s", self._log_context(), code, exc)
+                    continue
+        except Exception as exc:
+            logger.warning("[大盘] %s action=get_auction_heavyweights status=error error=%s", self._log_context(), exc)
+            return
+        overview.heavyweights = rows
+
+
+    def _get_yesterday_trading_date(self):
+        """取严格早于今天的最近一个交易日；日历不可用时返回 None。"""
+        try:
+            today = datetime.now().date()
+            dates = get_trading_dates("cn", today - timedelta(days=10), today - timedelta(days=1))
+        except Exception as exc:
+            logger.warning("[大盘] %s action=get_yesterday_trading_date status=error error=%s", self._log_context(), exc)
+            return None
+        if dates is None or len(dates) == 0:
+            return None
+        try:
+            return pd.Timestamp(dates[-1]).date()
+        except Exception:
+            return None
+
+
+    def _get_auction_yesterday_sentiment(self, overview: MarketOverview) -> None:
+        """集合竞价：取昨日涨停总数、龙虎榜去重只数与领涨（fail-open）。"""
+        yesterday = self._get_yesterday_trading_date()
+        if yesterday is None:
+            return
+        date_str = yesterday.strftime("%Y%m%d")
+        try:
+            pool = self.data_manager.get_limit_up_pool(date=date_str, n=1000)
+        except Exception as exc:
+            logger.warning("[大盘] %s action=get_auction_yesterday_sentiment step=limit_up_pool status=error error=%s", self._log_context(), exc)
+            pool = None
+        if pool is not None:
+            try:
+                rows = pool.to_dict("records") if hasattr(pool, "to_dict") else list(pool)
+            except Exception:
+                rows = []
+            overview.yesterday_limit_up_count = len(rows)
+            overview.yesterday_leaders = rows[:3]
+        try:
+            lhb = self.data_manager.get_longhubang(date=date_str)
+        except Exception as exc:
+            logger.warning("[大盘] %s action=get_auction_yesterday_sentiment step=longhubang status=error error=%s", self._log_context(), exc)
+            lhb = None
+        if lhb:
+            codes = set()
+            for row in lhb:
+                if isinstance(row, dict):
+                    code = row.get("code")
+                    if code:
+                        codes.add(code)
+            overview.yesterday_lhb_count = len(codes)
+
+
+    def _get_auction_shanghai_last5(self, overview: MarketOverview) -> None:
+        """集合竞价：取上证指数近 5 个交易日收盘价（fail-open）。"""
+        try:
+            result = self.data_manager.get_daily_data("sh000001", days=10)
+        except Exception as exc:
+            logger.warning("[大盘] %s action=get_auction_shanghai_last5 status=error error=%s", self._log_context(), exc)
+            return
+        df = result[0] if isinstance(result, tuple) else result
+        if df is None or getattr(df, "empty", True):
+            return
+        try:
+            tail = df.tail(5)
+        except Exception as exc:
+            logger.warning("[大盘] %s action=get_auction_shanghai_last5 status=error error=%s", self._log_context(), exc)
+            return
+        rows: List[Dict] = []
+        for _, row in tail.iterrows():
+            try:
+                raw_date = row.get("date", "")
+                date_str = str(raw_date)[:10] if raw_date is not None else ""
+                close = row.get("close")
+                close = None if close is None or pd.isna(close) else float(close)
+                pct = row.get("pct_chg")
+                pct = None if pct is None or pd.isna(pct) else float(pct)
+            except Exception:
+                continue
+            rows.append({"date": date_str, "close": close, "change_pct": pct})
+        overview.shanghai_last5 = rows
+        
 
     
     def _get_main_indices(self) -> List[MarketIndex]:
@@ -1184,6 +1311,8 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         news: Optional[List] = None,
     ) -> str:
         """Inject structured data tables into the corresponding LLM prose sections."""
+        if self._is_auction_format() and self.region == "cn":
+            return self._inject_auction_data_into_review(review, overview)
         # Build data blocks
         stats_block = self._build_stats_block(overview)
         indices_block = self._build_indices_block(overview)
@@ -1223,6 +1352,39 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
                 )
                 review = f"{review.rstrip()}\n\n{fallback_heading}\n{sector_block}\n"
 
+        return review
+
+    def _inject_auction_data_into_review(self, review: str, overview: MarketOverview) -> str:
+        """集合竞价格式：注入四段数据。"""
+        patterns = _CHINESE_SECTION_PATTERNS
+        indices_block = self._build_indices_block(overview)
+        if indices_block:
+            review = self._insert_after_section(review, patterns["auction_indices"], indices_block)
+        if overview.heavyweights:
+            lines = ["| 权重股 | 开盘 | 昨收 |", "|---|---|---|"]
+            for item in overview.heavyweights:
+                name = item.get("name") or item.get("code") or ""
+                code = item.get("code") or ""
+                lines.append(f"| {name}（{code}） | {self._format_optional_number(item.get('open'))} | {self._format_optional_number(item.get('prev_close'))} |")
+            review = self._insert_after_section(review, patterns["auction_heavyweights"], "\n".join(lines))
+        if overview.yesterday_limit_up_count or overview.yesterday_lhb_count or overview.yesterday_leaders:
+            lines = [f"- 昨日涨停总数：{overview.yesterday_limit_up_count} 家", f"- 昨日龙虎榜去重只数：{overview.yesterday_lhb_count} 只"]
+            for row in overview.yesterday_leaders:
+                if not isinstance(row, dict): continue
+                    name = row.get("name") or row.get("名称") or ""
+                code = row.get("code") or row.get("代码") or ""
+                pct = row.get("change_pct") if row.get("change_pct") is not None else row.get("涨跌幅")
+                lines.append(f"- {name}（{code}）：涨跌幅 {self._format_optional_number(pct)}%")
+            review = self._insert_after_section(review, patterns["auction_sentiment"], "\n".join(lines))
+        if overview.shanghai_last5:
+            lines = ["| 日期 | 收盘 | 涨跌幅 |", "|---|---|---|"]
+            for row in overview.shanghai_last5:
+                date_text = row.get("date") or ""
+                close_text = self._format_optional_number(row.get("close"))
+                pct = row.get("change_pct")
+                pct_text = f"{pct:.2f}" if pct is not None else "N/A"
+                lines.append(f"| {date_text} | {close_text} | {pct_text}% |")
+            review = self._insert_after_section(review, patterns["auction_shanghai"], "\n".join(lines))
         return review
 
     @staticmethod
@@ -1413,13 +1575,13 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             return ""
         if self._get_review_language() == "en":
             lines = [
-                f"| Index | Last | Change % | Open | High | Low | Amplitude | Turnover ({self._get_turnover_unit_label()}) |",
-                "|-------|------|----------|------|------|-----|-----------|-----------------|",
+                f"| Index | Last | Change % | Open | Prev Close | High | Low | Amplitude | Turnover ({self._get_turnover_unit_label()}) |",
+                "|-------|------|----------|------|----------|------|-----|-----------|-----------------|",
             ]
         else:
             lines = [
-                f"| 指数 | 最新 | 涨跌幅 | 开盘 | 最高 | 最低 | 振幅 | 成交额({self._get_turnover_unit_label() if self.region == 'tw' else '亿'}) |",
-                "|------|------|--------|------|------|------|------|-----------|",
+                f"| 指数 | 最新 | 涨跌幅 | 开盘 | 昨收 | 最高 | 最低 | 振幅 | 成交额({self._get_turnover_unit_label() if self.region == 'tw' else '亿'}) |",
+                "|------|------|--------|------|------|------|------|------|-----------|",
             ]
         for idx in overview.indices:
             arrow = self._get_index_change_arrow(idx.change_pct)
@@ -1427,7 +1589,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             amount_str = self._format_turnover_value(amount_raw)
             lines.append(
                 f"| {idx.name} | {idx.current:.2f} | {arrow} {idx.change_pct:+.2f}% | "
-                f"{self._format_optional_number(idx.open)} | {self._format_optional_number(idx.high)} | "
+                f"{self._format_optional_number(idx.open)}|{self._format_optional_number(idx.prev_close)}| {self._format_optional_number(idx.high)} | "
                 f"{self._format_optional_number(idx.low)} | {self._format_optional_pct(idx.amplitude)} | {amount_str} |"
             )
         return "\n".join(lines)
@@ -1710,10 +1872,73 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         add_section("风险提示", "（列出需要关注的风险点；最后补充“建议仅供参考，不构成投资建议”。）")
         return "\n\n".join(sections)
 
+def _build_auction_review_prompt(self, overview: MarketOverview) -> str:
+    """构建集合竞价（auction）格式的大盘复盘 Prompt（五段）。"""
+    indices_lines: List[str] = []
+    for idx in overview.indices:
+        open_text = self._format_optional_number(idx.open)
+        prev_text = self._format_optional_number(idx.prev_close)
+        if idx.open is None or idx.open == 0 or idx.prev_close is None or idx.prev_close == 0:
+            change_note = "不可用"
+        else:
+            change_note = "按（开盘-昨收）/昨收计算"
+        indices_lines.append(f"- {idx.name}：开盘 {open_text}，昨收 {prev_text}，涨跌 {change_note}")
+    indices_text = "\n".join(indices_lines) if indices_lines else "暂无数据"
+    heavy_lines: List[str] = []
+    for item in overview.heavyweights:
+        name = item.get("name") or item.get("code") or ""
+        code = item.get("code") or ""
+        open_text = self._format_optional_number(item.get("open"))
+        prev_text = self._format_optional_number(item.get("prev_close"))
+        if item.get("open") in (None, 0) or item.get("prev_close") in (None, 0):
+            change_note = "不可用"
+        else:
+            change_note = "按（开盘-昨收）/昨收计算"
+        heavy_lines.append(f"- {name}（{code}）：开盘 {open_text}，昨收 {prev_text}，涨跌 {change_note}")
+    heavyweights_text = "\n".join(heavy_lines) if heavy_lines else "暂无数据"
+    leader_lines: List[str] = []
+    for row in overview.yesterday_leaders:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("name") or row.get("名称") or ""
+        code = row.get("code") or row.get("代码") or ""
+        pct = row.get("change_pct")
+        if pct is None:
+            pct = row.get("涨跌幅")
+        pct_text = self._format_optional_number(pct)
+        leader_lines.append(f"- {name}（{code}）：涨跌幅 {pct_text}%")
+    leaders_text = "\n".join(leader_lines) if leader_lines else "暂无数据"
+    sh_lines: List[str] = []
+    for row in overview.shanghai_last5:
+        date_text = row.get("date") or ""
+        close_text = self._format_optional_number(row.get("close"))
+        pct = row.get("change_pct")
+        pct_text = f"{pct:.2f}" if pct is not None else "N/A"
+        sh_lines.append(f"- {date_text}：收盘 {close_text}，涨跌幅 {pct_text}%")
+    shanghai_text = "\n".join(sh_lines) if sh_lines else "暂无数据"
+    return (
+        "你是一名 A 股集合竞价晨报分析师。请根据以下数据输出晨报，结构固定为五段。\n\n"
+        "### 一、指数开盘\n"
+        f"{indices_text}\n"
+        "（涨跌幅请按（开盘-昨收）/昨收自行计算，不要用实时涨跌幅；今开为 0 或缺失时该项写不可用。）\n\n"
+        "### 二、权重股\n"
+        f"{heavyweights_text}\n\n"
+        "### 三、昨日情绪\n"
+        f"昨日涨停总数：{overview.yesterday_limit_up_count} 家\n"
+        f"昨日龙虎榜去重只数：{overview.yesterday_lhb_count} 只\n"
+        f"领涨（涨停池前 3 名）：\n{leaders_text}\n\n"
+        "### 四、上证近 5 日\n"
+        f"{shanghai_text}\n\n"
+        "### 五、盘前判断\n"
+        "给出 3-5 条盘前判断，每条必须对应上面一至四段中的某个具体数字；不要编造未提供的数据；结尾必须写上仅供参考，不构成投资建议。"
+    )
+
     def _build_review_prompt(self, overview: MarketOverview, news: List) -> str:
         """构建复盘报告 Prompt"""
         review_language = self._get_review_language()
-        # Korean reuses the English structural template but the model is told to
+        if self._is_auction_format() and self.region == "cn":
+            return self._build_auction_review_prompt(overview)
+        # Korean reuses the English structural template but the model is told t
         # write the entire shell, headings, guidance and conclusion in Korean.
         shell_language_label = "Korean (한국어)" if self._get_output_language() == "ko" else "English"
 
