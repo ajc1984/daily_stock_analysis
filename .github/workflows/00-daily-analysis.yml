@@ -42,6 +42,8 @@ on:
 concurrency:
   group: stock-analysis
   cancel-in-progress: false
+permissions:
+  contents: read
 
 jobs:
   analyze:
@@ -56,8 +58,10 @@ jobs:
       - name: 随机延迟（避免固定时间访问）
         run: sleep $((RANDOM % 60))  # 随机延迟0-60秒启动
       
-      - name: 检出代码
+      - name: 检出代码    
         uses: actions/checkout@v5
+         with:
+           persist-credentials: false
       
       - name: 设置 Python 环境
         uses: actions/setup-python@v6
@@ -68,7 +72,7 @@ jobs:
       - name: 安装依赖
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -c constraints.txt
           python -c "import futu; print('✅ futu SDK import OK')"
       
       - name: 创建必要目录
