@@ -58,10 +58,11 @@ jobs:
       - name: 随机延迟（避免固定时间访问）
         run: sleep $((RANDOM % 60))  # 随机延迟0-60秒启动
       
-      - name: 检出代码    
+      - name: 检出代
         uses: actions/checkout@v5
-         with:
-           persist-credentials: false
+        with:
+          persist-credentials: false
+         
       
       - name: 设置 Python 环境
         uses: actions/setup-python@v6
