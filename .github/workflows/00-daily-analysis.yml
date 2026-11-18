@@ -37,7 +37,8 @@ on:
             - auto
             - standard
             - auction
-        
+
+          default: 'auto'
 concurrency:
   group: stock-analysis
   cancel-in-progress: false
