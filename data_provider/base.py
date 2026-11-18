@@ -470,8 +470,8 @@ class BaseFetcher(ABC):
         self,
         date: Optional[str] = None,
     ) -> Optional[List[Dict[str, Any]]]:
-    """获取全市场龙虎榜（按日期查询）。"""
-    return None
+        """获取全市场龙虎榜（按日期查询）。"""
+        return None
 
     def get_daily_data(
         self,
