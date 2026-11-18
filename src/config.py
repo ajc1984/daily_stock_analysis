@@ -1335,6 +1335,8 @@ class Config:
     # 大盘复盘市场区域：cn(A股)、hk(港股)、us(美股)、jp(日股)、kr(韩股)、tw(台股)、both(全部市场)
     market_review_region: str = "cn"
     market_review_color_scheme: str = "green_up"
+    # 大盘复盘格式：standard（标准格式）、auction（集合竞价五段格式）；由 MARKET_REVIEW_FORMAT 环境变量控制
+    market_review_format: str = "standard"
     # 交易日检查：默认启用，非交易日跳过执行；设为 false 或 --force-run 可强制执行（Issue #373）
     trading_day_check_enabled: bool = True
 
@@ -2352,6 +2354,9 @@ class Config:
             market_review_color_scheme=cls._parse_market_review_color_scheme(
                 os.getenv('MARKET_REVIEW_COLOR_SCHEME', 'green_up')
             ),
+        market_review_format=cls._parse_market_review_format(
+            os.getenv('MARKET_REVIEW_FORMAT','standard')
+        ),
             trading_day_check_enabled=os.getenv('TRADING_DAY_CHECK_ENABLED', 'true').lower() != 'false',
             webui_enabled=os.getenv('WEBUI_ENABLED', 'false').lower() == 'true',
             webui_host=os.getenv('WEBUI_HOST', '127.0.0.1'),
@@ -3120,6 +3125,19 @@ class Config:
             value,
         )
         return 'green_up'
+
+        @classmethod
+        def _parse_market_review_format(cls, value: str) -> str:
+            """解析大盘复盘格式，非法值记录警告后回退为 standard"""
+            import logging
+            v = (value or 'standard').strip().lower()
+            if v in ('standard', 'auction'):
+                return v
+            logging.getLogger(__name__).warning(
+                "MARKET_REVIEW_FORMAT 配置值 '%s' 无效，已回退为默认值 'standard'（合法值：standard / auction）",
+                value,
+            )
+            return 'standard'
 
     @classmethod
     def _parse_md2img_engine(cls, value: str) -> str:
