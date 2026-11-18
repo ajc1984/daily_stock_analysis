@@ -1945,6 +1945,7 @@ class AkshareFetcher(BaseFetcher):
             'sh000688': '科创50',
             'sh000016': '上证50',
             'sh000300': '沪深300',
+        'sh000852': '中证1000',
         }
 
         try:
@@ -2427,6 +2428,36 @@ class AkshareFetcher(BaseFetcher):
             logger.warning(f"[Akshare] 获取涨停池失败: {e}")
             return None
 
+
+        def get_longhubang(
+            self,
+            date: Optional[str] = None,
+        ) -> Optional[List[Dict[str, Any]]]:
+            """获取全市场龙虎榜（ak.stock_lhb_detail_em），按日期查询。"""
+            import akshare as ak
+            query_date = date or datetime.now().strftime('%Y%m%d')
+            try:
+                self._set_random_user_agent()
+                self._enforce_rate_limit()
+                logger.info("[API调用] ak.stock_lhb_detail_em(date=%s) 获取龙虎榜...", query_date)
+                df = ak.stock_lhb_detail_em(date=query_date)
+                if df is None or df.empty:
+                    return None
+                    rows: List[Dict[str, Any]] = []
+                    for _, row in df.iterrows():
+                        rows.append({
+                            'code': str(row.get('代码', '')).strip(),
+                            'name': str(row.get('名称', '')).strip(),
+                            'reason': str(row.get('上榜原因', '')).strip(),
+                            'close': self._safe_float(row.get('收盘价')),
+                            'change_pct': self._safe_float(row.get('涨跌幅')),
+                            'amount': self._safe_float(row.get('成交额')),
+                            'net_buy': self._safe_float(row.get('净买入额')),
+                        })
+                        return rows
+            except Exception as e:
+                logger.warning(f"[Akshare] 获取龙虎榜失败: {e}")
+                return None
     @staticmethod
     def _normalize_limit_time_value(value: Any) -> str:
         """Normalize AkShare HHMMSS-like seal time values to zero-padded HHMMSS."""
