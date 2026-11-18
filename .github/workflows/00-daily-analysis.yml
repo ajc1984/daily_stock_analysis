@@ -29,7 +29,15 @@ on:
         required: false
         type: string
         default: ''
-
+        market_format:
+          description: '大盘复盘格式：auto 按时间自动，auction 强制集合竞价格式，standard 强制标准格式'
+          required: false
+          type: choice
+          options:
+            - auto
+            - standard
+            - auction
+        default: auto
 # 并发控制：同一时间只运行一个分析任务
 concurrency:
   group: stock-analysis
@@ -491,7 +499,9 @@ jobs:
 
           # 判断运行模式
           MODE="${{ github.event.inputs.mode || 'full' }}"
-          
+
+          RUN_HOUR_UTC=$(date -u +%H)
+          if [ -n "${{ github.event.inputs.market_format }}" ] && [ "${{ github.event.inputs.market_format }}" ] != "auto" ]; then export MARKET_REVIEW_FORMAT="${{ github.event.inputs.market_format }}";  elif [ "$RUN_HOUR_UTC" = "01" ]; then export MARKET_REVIEW_FORMAT="auction"; else export MARKET_REVIEW_FORMAT="standard"; fi
           echo "=========================================="
           echo "🚀 A股自选股智能分析系统"
           echo "=========================================="
