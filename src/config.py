@@ -3126,18 +3126,18 @@ class Config:
         )
         return 'green_up'
 
-        @classmethod
-        def _parse_market_review_format(cls, value: str) -> str:
-            """解析大盘复盘格式，非法值记录警告后回退为 standard"""
-            import logging
-            v = (value or 'standard').strip().lower()
-            if v in ('standard', 'auction'):
-                return v
-            logging.getLogger(__name__).warning(
-                "MARKET_REVIEW_FORMAT 配置值 '%s' 无效，已回退为默认值 'standard'（合法值：standard / auction）",
-                value,
-            )
-            return 'standard'
+    @classmethod
+    def _parse_market_review_format(cls, value: str) -> str:
+        """解析大盘复盘格式，非法值记录警告后回退为 standard"""
+        import logging
+        v = (value or 'standard').strip().lower()
+        if v in ('standard', 'auction'):
+            return v
+        logging.getLogger(__name__).warning(
+            "MARKET_REVIEW_FORMAT 配置值 '%s' 无效，已回退为默认值 'standard'（合法值：standard / auction）",
+            value,
+        )
+        return 'standard'
 
     @classmethod
     def _parse_md2img_engine(cls, value: str) -> str:
