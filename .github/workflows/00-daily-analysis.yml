@@ -29,16 +29,16 @@ on:
         required: false
         type: string
         default: ''
-        market_format:
-          description: '大盘复盘格式：auto 按时间自动，auction 强制集合竞价格式，standard 强制标准格式'
-          required: false
-          type: choice
-          options:
-            - auto
-            - standard
-            - auction
+      market_format:
+        description: '大盘复盘格式：auto 按时间自动，auction 强制集合竞价格式，standard 强制标准格式'
+        required: false
+        type: choice
+        options:
+          - auto
+          - standard
+          - auction
 
-          default: 'auto'
+        default: 'auto'
 concurrency:
   group: stock-analysis
   cancel-in-progress: false
