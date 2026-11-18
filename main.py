@@ -1171,6 +1171,8 @@ def run_full_analysis(
                 (merge_notification or market_context_generated_during_stock)
                 and can_reuse_market_context
                 and bool(market_context_full_report or market_context_summary)
+                # 集合竞价五段格式（auction）禁用复用：09:25 必须重新生成五段文本
+                and getattr(config, 'market_review_format', 'standard') != 'auction'
             )
             if can_skip_market_review:
                 market_report = market_context_full_report or market_context_summary
