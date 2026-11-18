@@ -1371,7 +1371,7 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
             lines = [f"- 昨日涨停总数：{overview.yesterday_limit_up_count} 家", f"- 昨日龙虎榜去重只数：{overview.yesterday_lhb_count} 只"]
             for row in overview.yesterday_leaders:
                 if not isinstance(row, dict): continue
-                    name = row.get("name") or row.get("名称") or ""
+                name = row.get("name") or row.get("名称") or ""
                 code = row.get("code") or row.get("代码") or ""
                 pct = row.get("change_pct") if row.get("change_pct") is not None else row.get("涨跌幅")
                 lines.append(f"- {name}（{code}）：涨跌幅 {self._format_optional_number(pct)}%")
