@@ -505,8 +505,12 @@ jobs:
           # 判断运行模式
           MODE="${{ github.event.inputs.mode || 'full' }}"
 
-          RUN_HOUR_UTC=$(date -u +%H)
-          if [ -n "${{ github.event.inputs.market_format }}" ] && [ "${{ github.event.inputs.market_format }}" != "auto" ]; then export MARKET_REVIEW_FORMAT="${{ github.event.inputs.market_format }}";  elif [ "$RUN_HOUR_UTC" = "01" ]; then export MARKET_REVIEW_FORMAT="auction"; else export MARKET_REVIEW_FORMAT="standard"; fi
+          # Scheduled slot: derive the planned run time (UTC) from github.event.schedule, not the actual start time
+          SCHEDULE_CRON="${{ github.event.schedule }}"
+          if [ -n "$SCHEDULE_CRON" ]; then _M="${SCHEDULE_CRON%% *}"; _R="${SCHEDULE_CRON#* }"; _H="${_R%% *}"; case "${_M}${_H}" in *[!0-9]*) echo "Cannot parse scheduled cron: $SCHEDULE_CRON";; *) _S=$(date -u -d "$(date -u +%Y-%m-%d) ${_H}:${_M} UTC" +%s); [ "$(date -u +%s)" -lt "$_S" ] && _S=$((_S - 86400)); export DSA_SCHEDULED_FOR=$(date -u -d "@$_S" +%Y-%m-%dT%H:%M:%SZ); echo "Scheduled run time (UTC): $DSA_SCHEDULED_FOR";; esac; fi
+          # Market review format: decide by the triggering schedule slot (cron), not the actual UTC hour
+          if [ -n "${{ github.event.inputs.market_format }}" ] && [ "${{ github.event.inputs.market_format }}" != "auto" ]; then export MARKET_REVIEW_FORMAT="${{ github.event.inputs.market_format }}"; elif [ "$SCHEDULE_CRON" = "25 1 * * 1-5" ]; then export MARKET_REVIEW_FORMAT="auction"; else export MARKET_REVIEW_FORMAT="standard"; fi
+          echo "Market review format: $MARKET_REVIEW_FORMAT"
           echo "=========================================="
           echo "🚀 A股自选股智能分析系统"
           echo "=========================================="
