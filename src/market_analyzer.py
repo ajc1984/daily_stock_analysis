@@ -1872,66 +1872,66 @@ Focus on index trend, liquidity, and sector rotation to shape the next-session t
         add_section("风险提示", "（列出需要关注的风险点；最后补充“建议仅供参考，不构成投资建议”。）")
         return "\n\n".join(sections)
 
-def _build_auction_review_prompt(self, overview: MarketOverview) -> str:
-    """构建集合竞价（auction）格式的大盘复盘 Prompt（五段）。"""
-    indices_lines: List[str] = []
-    for idx in overview.indices:
-        open_text = self._format_optional_number(idx.open)
-        prev_text = self._format_optional_number(idx.prev_close)
-        if idx.open is None or idx.open == 0 or idx.prev_close is None or idx.prev_close == 0:
-            change_note = "不可用"
-        else:
-            change_note = "按（开盘-昨收）/昨收计算"
-        indices_lines.append(f"- {idx.name}：开盘 {open_text}，昨收 {prev_text}，涨跌 {change_note}")
-    indices_text = "\n".join(indices_lines) if indices_lines else "暂无数据"
-    heavy_lines: List[str] = []
-    for item in overview.heavyweights:
-        name = item.get("name") or item.get("code") or ""
-        code = item.get("code") or ""
-        open_text = self._format_optional_number(item.get("open"))
-        prev_text = self._format_optional_number(item.get("prev_close"))
-        if item.get("open") in (None, 0) or item.get("prev_close") in (None, 0):
-            change_note = "不可用"
-        else:
-            change_note = "按（开盘-昨收）/昨收计算"
-        heavy_lines.append(f"- {name}（{code}）：开盘 {open_text}，昨收 {prev_text}，涨跌 {change_note}")
-    heavyweights_text = "\n".join(heavy_lines) if heavy_lines else "暂无数据"
-    leader_lines: List[str] = []
-    for row in overview.yesterday_leaders:
-        if not isinstance(row, dict):
-            continue
-        name = row.get("name") or row.get("名称") or ""
-        code = row.get("code") or row.get("代码") or ""
-        pct = row.get("change_pct")
-        if pct is None:
-            pct = row.get("涨跌幅")
-        pct_text = self._format_optional_number(pct)
-        leader_lines.append(f"- {name}（{code}）：涨跌幅 {pct_text}%")
-    leaders_text = "\n".join(leader_lines) if leader_lines else "暂无数据"
-    sh_lines: List[str] = []
-    for row in overview.shanghai_last5:
-        date_text = row.get("date") or ""
-        close_text = self._format_optional_number(row.get("close"))
-        pct = row.get("change_pct")
-        pct_text = f"{pct:.2f}" if pct is not None else "N/A"
-        sh_lines.append(f"- {date_text}：收盘 {close_text}，涨跌幅 {pct_text}%")
-    shanghai_text = "\n".join(sh_lines) if sh_lines else "暂无数据"
-    return (
-        "你是一名 A 股集合竞价晨报分析师。请根据以下数据输出晨报，结构固定为五段。\n\n"
-        "### 一、指数开盘\n"
-        f"{indices_text}\n"
-        "（涨跌幅请按（开盘-昨收）/昨收自行计算，不要用实时涨跌幅；今开为 0 或缺失时该项写不可用。）\n\n"
-        "### 二、权重股\n"
-        f"{heavyweights_text}\n\n"
-        "### 三、昨日情绪\n"
-        f"昨日涨停总数：{overview.yesterday_limit_up_count} 家\n"
-        f"昨日龙虎榜去重只数：{overview.yesterday_lhb_count} 只\n"
-        f"领涨（涨停池前 3 名）：\n{leaders_text}\n\n"
-        "### 四、上证近 5 日\n"
-        f"{shanghai_text}\n\n"
-        "### 五、盘前判断\n"
-        "给出 3-5 条盘前判断，每条必须对应上面一至四段中的某个具体数字；不要编造未提供的数据；结尾必须写上仅供参考，不构成投资建议。"
-    )
+    def _build_auction_review_prompt(self, overview: MarketOverview) -> str:
+        """构建集合竞价（auction）格式的大盘复盘 Prompt（五段）。"""
+        indices_lines: List[str] = []
+        for idx in overview.indices:
+            open_text = self._format_optional_number(idx.open)
+            prev_text = self._format_optional_number(idx.prev_close)
+            if idx.open is None or idx.open == 0 or idx.prev_close is None or idx.prev_close == 0:
+                change_note = "不可用"
+            else:
+                change_note = "按（开盘-昨收）/昨收计算"
+            indices_lines.append(f"- {idx.name}：开盘 {open_text}，昨收 {prev_text}，涨跌 {change_note}")
+        indices_text = "\n".join(indices_lines) if indices_lines else "暂无数据"
+        heavy_lines: List[str] = []
+        for item in overview.heavyweights:
+            name = item.get("name") or item.get("code") or ""
+            code = item.get("code") or ""
+            open_text = self._format_optional_number(item.get("open"))
+            prev_text = self._format_optional_number(item.get("prev_close"))
+            if item.get("open") in (None, 0) or item.get("prev_close") in (None, 0):
+                change_note = "不可用"
+            else:
+                change_note = "按（开盘-昨收）/昨收计算"
+            heavy_lines.append(f"- {name}（{code}）：开盘 {open_text}，昨收 {prev_text}，涨跌 {change_note}")
+        heavyweights_text = "\n".join(heavy_lines) if heavy_lines else "暂无数据"
+        leader_lines: List[str] = []
+        for row in overview.yesterday_leaders:
+            if not isinstance(row, dict):
+                continue
+            name = row.get("name") or row.get("名称") or ""
+            code = row.get("code") or row.get("代码") or ""
+            pct = row.get("change_pct")
+            if pct is None:
+                pct = row.get("涨跌幅")
+            pct_text = self._format_optional_number(pct)
+            leader_lines.append(f"- {name}（{code}）：涨跌幅 {pct_text}%")
+        leaders_text = "\n".join(leader_lines) if leader_lines else "暂无数据"
+        sh_lines: List[str] = []
+        for row in overview.shanghai_last5:
+            date_text = row.get("date") or ""
+            close_text = self._format_optional_number(row.get("close"))
+            pct = row.get("change_pct")
+            pct_text = f"{pct:.2f}" if pct is not None else "N/A"
+            sh_lines.append(f"- {date_text}：收盘 {close_text}，涨跌幅 {pct_text}%")
+        shanghai_text = "\n".join(sh_lines) if sh_lines else "暂无数据"
+        return (
+            "你是一名 A 股集合竞价晨报分析师。请根据以下数据输出晨报，结构固定为五段。\n\n"
+            "### 一、指数开盘\n"
+            f"{indices_text}\n"
+            "（涨跌幅请按（开盘-昨收）/昨收自行计算，不要用实时涨跌幅；今开为 0 或缺失时该项写不可用。）\n\n"
+            "### 二、权重股\n"
+            f"{heavyweights_text}\n\n"
+            "### 三、昨日情绪\n"
+            f"昨日涨停总数：{overview.yesterday_limit_up_count} 家\n"
+            f"昨日龙虎榜去重只数：{overview.yesterday_lhb_count} 只\n"
+            f"领涨（涨停池前 3 名）：\n{leaders_text}\n\n"
+            "### 四、上证近 5 日\n"
+            f"{shanghai_text}\n\n"
+            "### 五、盘前判断\n"
+            "给出 3-5 条盘前判断，每条必须对应上面一至四段中的某个具体数字；不要编造未提供的数据；结尾必须写上仅供参考，不构成投资建议。"
+        )
 
     def _build_review_prompt(self, overview: MarketOverview, news: List) -> str:
         """构建复盘报告 Prompt"""
